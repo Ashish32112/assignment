@@ -1,102 +1,60 @@
-library(stringr)
 library(dplyr)
 
-#Created platform independent paths
+#Reading and merging all files into traindataset
 
-wd <- file.path("C:/Users/Ashish/LearningR/assignment4/")
-testdir <- file.path("UCI HAR dataset/test")
-traindir <- file.path("UCI HAR dataset/train")
-signaldir <- file.path("Inertial Signals")
-readfiles <- file.path("UCI HAR dataset")
+traindata <- read.table("train/x_train.txt")
+trainsubject <- read.table("train/subject_train.txt")
+trainactivity <- read.table("train/y_train.txt")
+traindataset <- cbind(trainsubject,trainactivity,traindata)
 
-#Function to convert signal txt files to dataframe 
+#Reading and merging all files into testdataset
 
-text_to_df <- function(file){
-        readtxt <- readLines(file)
-        value_list <- str_extract_all(readtxt,
-                                      "[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?")
-        value_list <- lapply(value_list, function(x) as.numeric(x))
-        mean_vector <- sapply(value_list, mean)
-        sd_vector <- sapply(value_list, sd)
-        df <- data.frame(mean_vector, sd_vector)
-        return(df)
-}
+testdata <- read.table("test/x_test.txt")
+testsubject <- read.table("test/subject_test.txt")
+testactivity <- read.table("test/y_test.txt")
+testdataset <- cbind(testsubject,testactivity,testdata)
 
-#Function to create dataframe combining all signal files in given directory
+#merge traindataset and testdataset
 
-create_df <- function(working_path = wd, data_path, signal_file_path = signaldir){
-        files <- list.files(file.path(working_path,data_path,signal_file_path),
-                            pattern = ".txt")
-        if(data_path == traindir){
-                subject <- readLines(file.path(working_path,
-                                               data_path, "subject_train.txt"))
-                activity <- readLines(file.path(working_path,
-                                                data_path, "y_train.txt"))
-                setwd(file.path(working_path,data_path,signal_file_path))
-        }
-        else if(data_path == testdir){
-                subject <- readLines(file.path(working_path,
-                                               data_path, "subject_test.txt"))
-                activity <- readLines(file.path(working_path,
-                                                data_path, "y_test.txt"))
-                setwd(file.path(working_path,data_path,signal_file_path))
-        }
-        final_df <- text_to_df(files[1])
-        final_df <- data.frame(subject, activity, final_df)
-        for(file in files[2:length(files)]){
-                df <- text_to_df(file)
-                final_df <- cbind(final_df,df)
-        }
-        return(final_df)
-}
+merge_dataset <- rbind(traindataset, testdataset)
 
-#Merging data from test and train datasets
+#extract features variables names from features file and apply on merged_dataset
 
-Merged_df <- rbind(
-        create_df(wd, testdir, signaldir),
-        create_df(wd, traindir, signaldir))[1:14]
+featurenames <- read.table("features.txt")
+names(merge_dataset) <- c("Subject", "Activity", as.character(featurenames[,2]))
 
-# Extracting and applying activity labels to merged dataframe
 
-activity_labels <- readLines(file.path(wd, readfiles , "activity_labels.txt"))
-levels(Merged_df$activity) <- matrix(unlist(strsplit(activity_labels, " ")),
-                          ncol = 2, byrow = TRUE)[,2]
+#extracting only mean and std variables columns from merged_datset
 
-rm('activity_labels')
+required_names <- grep(".*mean.*|.*std.*", featurenames[,2])
+final_dataset <- merge_dataset[,c(1,2,(required_names +2))]
 
-#Extracting Variable names from features txt files.
+#get activity labels
 
-variable_names <- readLines(file.path(wd, readfiles, "features.txt"))
-variable_names <- str_extract_all(variable_names,
-         "([t][BG][a-zA-Z]*[coy][-]?[ms][et][ad].*)", simplify = TRUE)
-variable_names <- variable_names[variable_names != ""]
+activitylabels <- read.table("activity_labels.txt")
+final_dataset$Activity <- factor(final_dataset$Activity,
+                                levels = activitylabels[,1],
+                                labels = activitylabels[,2])
 
-#Rearranging extraxted variable names according to merged dataframe
-#applying the variables name to merged dataframe
+final_dataset$Subject <- factor(final_dataset$Subject)
 
-variable_names <- variable_names[c(1,4,2,5,3,6,
-                                     13,16,14,17,15,18)]
-names(Merged_df) <- c("Subject", "Activity", variable_names)
+#creating summarised dataset from final_dataset
 
-rm('variable_names')
+summarise_dataset <- summarise_each(
+        group_by(final_dataset, Subject, Activity),
+        funs(mean)
+)
 
-#Creating second dataset summariseing the merged dataset
+names(summarise_dataset) <- c("Subject", "Activity",
+                              paste(featurenames[,2][required_names],
+                                rep("Avg.",length(required_names))))
 
-grouped_data <- group_by(Merged_df, Subject, Activity)
+#writing files to text files
 
-Summary_df <- summarise_each(grouped_data, funs(mean))
+write.table(final_dataset, "Clean_dataset.txt")
+write.table(summarise_dataset, "Summary_dataset.txt")
 
-names(Summary_df) <- c('Subject', 'Activity',
-        paste(variable_names, rep("avg", length(variable_names)-2)))
 
-rm('grouped_data')
-
-#Writing data to files
-
-setwd(wd)
-
-write.table(Merged_df, "merged_dataset.txt",row.names = FALSE)
-write.table(Summary_df, "summary_dataset.txt", row.names = FALSE)
 
 
 
